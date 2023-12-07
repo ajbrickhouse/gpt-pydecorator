@@ -10,9 +10,8 @@ import openpyxl
 from datetime import datetime
 import discord
 import asyncio
+import pandas as pd
 import warnings
-
-warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
 
 # Load the API key from .env file
 load_dotenv()
@@ -24,6 +23,8 @@ def default(o):
 json.JSONEncoder.default = default
 
 openai.api_key = "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"
+warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
+
 
 @openaifunc
 def search_master_list(keyword: str) -> dict:
@@ -31,107 +32,71 @@ def search_master_list(keyword: str) -> dict:
     Searches the master list for any keyword and returns all of the information related to the matches
     @param keyword: The keyword to search for
     """
-    print("Searching system list for keyword: " + keyword)
-    wb = openpyxl.load_workbook('ACvFLO master list.xlsx', read_only=True)
+    print("Searching master list for keyword: " + keyword)
+    file_path = 'ACvFLO master list.xlsx'
+
+    try:
+        xls = pd.ExcelFile(file_path)
+    except ValueError as e:
+        print(f"Error reading the file: {e}")
+        return {}
 
     result = {}
 
-    for sheet_name in wb.sheetnames:
-        sheet = wb[sheet_name]
-        rows = []
+    for sheet_name in xls.sheet_names:
+        try:
+            df = pd.read_excel(xls, sheet_name=sheet_name)
+        except Exception as e:
+            print(f"Error reading sheet '{sheet_name}': {e}")
+            continue
 
-        for row in sheet.iter_rows(values_only=True):
-            if keyword in row:
-                rows.append(row)
+        # Filter the DataFrame for rows containing the keyword
+        matching_rows = df[df.apply(lambda row: row.astype(str).str.contains(keyword).any(), axis=1)]
 
-        if rows:
-            header = [cell.value for cell in sheet[1]]
-            rows.insert(0, header)
-
-        result[sheet_name] = rows
-
+        if not matching_rows.empty:
+            # Convert the filtered DataFrame to a list of rows
+            result[sheet_name] = matching_rows.values.tolist()
+    # print(result)
     return result
 
 @openaifunc
 def search_master_schedule(keyword: str) -> dict:
     """
-    Searches the schedule for any keyword and returns all of the information related to the matches
+    Searches the master schedule for any keyword and returns all of the information related to the matches
     @param keyword: The keyword to search for
     """
     print("Searching master schedule for keyword: " + keyword)
     try:
-        wb = openpyxl.load_workbook('Master Schedule.xlsx', read_only=True)
-    except openpyxl.utils.exceptions.InvalidFileException:
-        print("Invalid file format. Please make sure the file is in the correct format.")
-        return {}
+        df = pd.read_excel('Master Schedule.xlsx', sheet_name='Master Schedule')
     except Exception as e:
-        print(f"Unexpected error occurred while loading the workbook: {e}")
+        print(f"Error reading the file: {e}")
         return {}
 
-    result = {}
+    result = df[df.apply(lambda row: row.astype(str).str.contains(keyword).any(), axis=1)]
+    # print(result.to_dict(orient='list'))
+    return result.to_dict(orient='list')
 
-    sheet_name = 'Master Schedule'  # Specify the sheet name to search
+@openaifunc
+def search_all_masters(keyword: str) -> dict:
+    """
+    Searches the master list and master schedule for any keyword and returns all of the information related to the matches
+    @param keyword: The keyword to search for
+    """
+    print("Searching master list and master schedule for keyword: " + keyword)
+    result = {}
+    try:
+        master_list_results = search_master_list(keyword)
+        result["Master List"] = master_list_results
+    except Exception as e:
+        print(f"An error occurred while searching the master list: {e}")
 
     try:
-        sheet = wb[sheet_name]
-    except KeyError:
-        print(f"Sheet '{sheet_name}' not found in the workbook.")
-        return {}
-
-    rows = []
-
-    for row in sheet.iter_rows(values_only=True):
-        if keyword in row:
-            rows.append(row)
-
-    if rows:
-        header = [cell.value for cell in sheet[1]]
-        rows.insert(0, header)
-
-    result[sheet_name] = rows
+        master_schedule_results = search_master_schedule(keyword)
+        result["Master Schedule"] = master_schedule_results
+    except Exception as e:
+        print(f"An error occurred while searching the master schedule: {e}")
 
     return result
-
-def chunk_output(output: str, max_length: int = 1500) -> list:
-    """
-    Splits the output into chunks without breaking code encapsulations.
-    @param output: The output to split
-    @param max_length: The maximum length of each chunk
-    """
-    chunks = []
-    parts = output.split("```")  # Splitting based on code block delimiter
-
-    for part in parts:
-        # append to chunks if part is less than max_length
-        if len(part) < max_length:
-            chunks.append(part)
-        else:
-            # split part into smaller chunks
-            while len(part) > max_length:
-                sub_part = part[:max_length]
-                part = part[max_length:]
-                chunks.append(sub_part)
-            chunks.append(part)
-
-    # create a new list to store valid chunks
-    valid_chunks = []
-
-    # go through each chunk, strip out the ` characters and see if it's empty. If it is, remove it from the list
-    for chunk in chunks:
-        # if the chunk is empty or only spaces, skip it
-        if chunk.strip("`").strip(" ") == "":
-            continue
-
-        # make sure every list item starts and ends with ' ``` ', if it doesn't, add it
-        if not chunk.startswith("```"):
-            chunk = "```" + chunk
-
-        if not chunk.endswith("```"):
-            chunk = chunk + "```"
-
-        valid_chunks.append(chunk)
-
-    return valid_chunks
 
 # ChatGPT API Function
 def send_message(message, messages, model_arg="gpt-4-1106-preview"):
@@ -178,27 +143,14 @@ class MyClient(discord.Client):
         if message.author == self.user:
             return  # Avoid responding to the bot's own messages
 
+        await message.channel.send("Working on it...")
+
         messages = []  # Initialize messages as an empty list
-
-        # await message.channel.send("Working on it...")
-
-        # fetch the messages from the channel
-        async for msg in message.channel.history(limit=20):
-            # convert the message content to a dict if it is a string
-            # print(msg.author, " | ",msg.content)
-            # append author and content to messages
-            # if content exists
-            if msg.content:
-                messages.append({"role": "user", "content": f"{msg.author}: {msg.content}"})
-
-        # remove the last message from the list
-
-        # reverse the list so that the messages are in chronological order
-        messages.reverse()
-        messages.pop()
-
         messages = send_message({"role": "user", "content": message.content}, messages)
         
+        # # Get ChatGPT response
+        # chatgpt_response = messages[-1]["content"]
+
         # If ChatGPT response is a function call, call the function
         if messages[-1].get("function_call"):
             function_name = messages[-1]["function_call"]["name"]
@@ -216,28 +168,26 @@ class MyClient(discord.Client):
                 # else:
                 function_response = globals()[function_name](**arguments)
 
+                print(f"Function '{function_name}' called with arguments: {arguments}")
+                print(f"Function response: {function_response}")
+
                 # Send function result back to ChatGPT
                 messages = send_message(
                     {
                         "role": "function",
                         "name": function_name,
-                        "content": function_response,
+                        "content": "Please provide a detailed outline about this data: " + function_response,
                     },
                     messages,
-                    # "gpt-3.5-turbo-1106",
+                    "gpt-3.5-turbo-1106",
                 )
 
         # Get the final response from ChatGPT
         final_response = messages[-1]["content"]
 
-        responses = []
+        # Send final response to Discord
+        await message.channel.send(final_response)
 
-        responses = chunk_output(final_response)
-
-        # Send final responses to Discord
-        for response in responses:
-            await message.channel.send(response)
-        
 intents = discord.Intents.default()
 intents.message_content = True
 

@@ -5,23 +5,44 @@ import openai
 import os
 import sys
 import json
+from dotenv import load_dotenv
+import openpyxl
+from datetime import datetime
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
+# Load the API key from .env file
+load_dotenv()
+openai.api_key = "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"
+
+# Convert datetime object to string
+def default(o, *args):
+    if isinstance(o, datetime):
+        return o.__str__()
+
+json.JSONEncoder.default = default
 
 @openaifunc
-def get_current_weather(location: str, country: str) -> str:
+def keyword_search_excel(keyword) -> dict:
     """
-    Gets the current weather information
-    @param location: The location for which to get the weather
-    @param country: The ISO 3166-1 alpha-2 country code
+    Searches the master list for any keyword and returns all of the information related to the matches
     """
+    wb = openpyxl.load_workbook('ACvFLO master list.xlsx')
+    result = {}
 
-    if country == "FR":
-        return "The weather is terrible, as always"
-    elif location == "California":
-        return "The weather is nice and sunny"
-    else:
-        return "It's rainy and windy"
+    for sheet_name in wb.sheetnames:
+        sheet = wb[sheet_name]
+        rows = []
+
+        for row in sheet.iter_rows(values_only=True):
+            if keyword in row:
+                rows.append(row)
+
+        if rows:
+            header = [cell.value for cell in sheet[1]]
+            rows.insert(0, header)
+
+        result[sheet_name] = rows
+
+    return result
 
 @openaifunc
 def recommend_youtube_channel() -> str:
@@ -39,26 +60,31 @@ def calculate_str_length(string: str) -> str:
 
 # ChatGPT API Function
 def send_message(message, messages):
-    # add user message to message list
     messages.append(message)
 
+    # Convert the 'content' of each message to a string if it is not already
+    for msg in messages:
+        if isinstance(msg.get('content'), dict):
+            msg['content'] = json.dumps(msg['content'], default=str)
+
     try:
-        # send prompt to chatgpt
         response = openai.ChatCompletion.create(
-            # model="gpt-4-0613",
-            model="gpt-3.5-turbo-0613",
+            model="gpt-4-1106-preview",
             messages=messages,
             functions=get_openai_funcs(),
             function_call="auto",
         )
-    except openai.error.AuthenticationError:
-        print("AuthenticationError: Check your API-key")
+    except openai.error.OpenAIError as e:
+        print(f"OpenAIError: {e}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Unexpected Error: {e}")
         sys.exit(1)
 
-    # add response to message list
     messages.append(response["choices"][0]["message"])
-
     return messages
+
+
 
 # MAIN FUNCTION
 def run_conversation(prompt, messages=[]):
@@ -76,7 +102,10 @@ def run_conversation(prompt, messages=[]):
             arguments = json.loads(message["function_call"]["arguments"])
 
             # call function dangerously
-            function_response = globals()[function_name](**arguments)
+            if function_name == "get_current_weather":
+                function_response = globals()[function_name](arguments.get("location"), arguments.get("country"))
+            else:
+                function_response = globals()[function_name](**arguments)
 
             # send function result to chatgpt
             messages = send_message(

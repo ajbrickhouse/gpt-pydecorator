@@ -196,9 +196,9 @@ def get_messages(table: str = "messages", limit: int = 10) -> dict:
         conn.close()
         return f"Table '{table}' does not exist. Available tables: {', '.join([t[0] for t in tables])}"
 
-    # Execute a query to fetch a limited number of messages
+    # Execute a query to fetch a limited number of messages in descending order of timestamp
     # Modify the query as per your database schema and requirements
-    query = "SELECT id, content, author, timestamp FROM {} LIMIT ?".format(table)  # Fix the query to include the table name
+    query = "SELECT id, content, author, timestamp FROM {} ORDER BY timestamp DESC LIMIT ?".format(table)  # Fix the query to include the table name
     cursor.execute(query, (limit,))  # Remove the 'table' parameter from the execute method
     fetched_messages = cursor.fetchall()
 

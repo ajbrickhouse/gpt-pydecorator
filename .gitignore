@@ -1,2 +1,16 @@
 __pycache__
 .env
+chatbot.db
+
+chatbot copy.py
+chunking_test.py
+db_testing.py
+keyword_search_test.py
+master_sched_search_test.py
+sandbox.py
+test.py
+
+ACvFLO master list.xlsx
+Master Schedule.xlsx
+MasterSchedule.xlsx
+.env

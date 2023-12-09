@@ -20,15 +20,15 @@ warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
 database = "chatbot.db"
 
 # Load the API key from .env file
-load_dotenv()
+load_dotenv(override=True)
+openai.api_key = os.getenv("OPENAI_API_KEY")
+
 def default(o):
     if isinstance(o, datetime):
         return o.__str__()
     return str(o)  # Ensure content is always a string
 
 json.JSONEncoder.default = default
-
-openai.api_key = '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'
 
 @openaifunc
 def search_master_list(keyword: str) -> dict:
